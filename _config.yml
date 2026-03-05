@@ -25,6 +25,7 @@ description: >- # this means to ignore newlines until "baseurl:"
   
 baseurl: "/academic/help" # the subpath of your site, e.g. /blog
 url: "https://incitefulmed.com" # the base hostname & protocol for your site, e.g. http://example.com
+destination: ./_site/academic/help
 
 # Build settings
 theme: just-the-docs
