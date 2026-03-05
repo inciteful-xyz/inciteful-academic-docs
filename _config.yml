@@ -23,8 +23,8 @@ email: help@inciteful.xyz
 logo: "/assets/images/logo-200.png"
 description: >- # this means to ignore newlines until "baseurl:"
   
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "" # the base hostname & protocol for your site, e.g. http://example.com
+baseurl: "/academic/help" # the subpath of your site, e.g. /blog
+url: "https://incitefulmed.com" # the base hostname & protocol for your site, e.g. http://example.com
 
 # Build settings
 theme: just-the-docs

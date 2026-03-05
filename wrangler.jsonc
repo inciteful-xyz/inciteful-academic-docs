@@ -1,0 +1,19 @@
+{
+  "name": "inciteful-academic-help",
+  "compatibility_date": "2026-01-29",
+  "assets": {
+    "directory": "./_site",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    {
+      "pattern": "*incitefulmed.com/academic/help/*",
+      "zone_name": "incitefulmed.com"
+    },
+    {
+      "pattern": "*incitefulmed.com/academic/help",
+      "zone_name": "incitefulmed.com"
+    }
+  ],
+  "preview_urls": true
+}
