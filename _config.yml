@@ -67,7 +67,7 @@ aux_links_new_tab: false
 
 heading_anchors: true
 
-footer_content: "Copyright &copy; 2020 Inciteful.xyz"
+footer_content: "Copyright &copy; 2020&ndash;2026 Inciteful &middot; <a href=\"https://incitefulmed.com/academic/mcp/privacy\">Privacy</a> &middot; <a href=\"https://incitefulmed.com/academic/mcp/terms\">Terms</a>"
 
 # Footer last edited timestamp
 last_edit_timestamp: true # show or hide edit time - page must have `last_modified_date` defined in the frontmatter
