@@ -90,7 +90,7 @@ The Literature Connector finds paths of citations between two papers. It treats 
 3. The shortest paths run through the papers in the overlap. If one paper cites the other, the only path is the two papers themselves.
 4. With **extended paths**, at least 5 paths are wanted. If one paper cites the other, or fewer than 5 shortest paths were found, it returns every path between the two papers within the search, after adding one more layer to the smaller set in the second case. This includes paths longer than the shortest.
 
-Papers cited more than 30,000 times are included, but the papers citing them are not fetched, as in [graph construction](#prune-threshold-and-unexpanded-papers). The connector does not calculate PageRank. The connector's diagram draws every citation pointing from the first paper toward the second, whatever its real direction.
+Papers cited more than 30,000 times, other than the two papers you connect, are included, but the papers citing them are not fetched, as in [graph construction](#prune-threshold-and-unexpanded-papers). The connector does not calculate PageRank. The connector's diagram draws every citation pointing from the first paper toward the second, whatever its real direction.
 
 # Provenance Fields {#provenance-fields}
 Results from Inciteful's MCP server (`https://incitefulmed.com/academic/mcp`), which connects Inciteful to AI assistants, carry a `provenance` block that records how they were produced. A field that doesn't apply to a result, or that an older cached graph doesn't record, is `null`, never `0`.

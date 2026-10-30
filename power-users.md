@@ -105,7 +105,7 @@ The table containing all of the papers in the graph.
 | -------------: | ------: | ----------: |
 |       paper_id |    TEXT | The OpenAlex ID of the paper, such as `W2919115771`. The synthetic paper in multi-seed graphs is `W0`. |
 |            doi |    TEXT | The DOI of the paper, without the `https://doi.org/` prefix. NULL if the paper has none. |
-|        authors |    TEXT | A JSON array of the authors on the paper. Each author has `author_id`, `name`, `sequence`, `position` (`first`, `middle` or `last`) and `institution` (`id`, `name` and `ror`). Fields with no value are left out. |
+|        authors |    TEXT | A JSON array of the authors on the paper. Each author has `author_id`, `name`, `sequence`, `position` (`first`, `middle` or `last`) and `institution` (`id`, `name` and `ror`). Top-level author fields with no value are left out; missing `institution` fields are `null`. |
 |    num_authors | INTEGER | The number of authors on the paper. |
 |          title |    TEXT | The title of the paper. |
 | published_year | INTEGER | The year the paper was published. |
@@ -140,7 +140,7 @@ One row for each fact about how the graph was built. `value` is stored as TEXT, 
 |               graph_depth | How many layers of citations the graph was built to. It can be lower than requested when the next layer would have been too large. |
 |            graph_snapshot | The version of Inciteful's paper database the graph was built from, such as `2026-10-15`. |
 |           prune_threshold | Papers cited more times than this were added to the graph, but the papers citing them were not fetched. |
-| highly_cited_not_expanded | How many papers, other than the seed papers and `W0`, were over `prune_threshold` and so didn't have their citing papers fetched. |
+| highly_cited_not_expanded | How many papers, other than the seed papers and `W0`, were over `prune_threshold` when their layer was expanded, and so didn't have their citing papers fetched. Papers in the last layer aren't counted. |
 |        seeds_not_expanded | How many seed papers were over `prune_threshold` and so didn't have their citing papers fetched. Always `0` for a single-seed graph. |
 |               paper_count | The number of papers with at least one citation inside the graph, including `W0` in a multi-seed graph. This can be lower than `SELECT COUNT(*) FROM papers`. |
 |            citation_count | The number of citations between papers in the graph. |
@@ -184,7 +184,7 @@ The unfiltered vocabulary that `title_terms` is built on (an FTS5 `fts5vocab` ta
 |         cnt |  INT | The total number of times the term appears. |
 
 ### The `ror` Database
-Data from the [Research Organization Registry](https://ror.org) (ROR) is attached to every graph database as `ror`, so prefix its tables with `ror.`. It holds active organizations only. Join it to authors on `authors.ror = ror.organizations.ror_url`:
+Data from the [Research Organization Registry](https://ror.org) (ROR) is attached to every graph database as `ror` (when the server has the ROR file, as it does in production), so prefix its tables with `ror.`. It holds active organizations only. Join it to authors on `authors.ror = ror.organizations.ror_url`:
 
 ```
 SELECT r.display_name, r.country_name, COUNT(DISTINCT a.paper_id) AS papers
