@@ -39,7 +39,7 @@ The graph is built in layers. Each layer fetches every paper that cites, or is c
 If the next layer would mean fetching more than 250,000 papers, Inciteful stops before that layer, so the graph can be shallower than requested. The depth actually reached is recorded as `graph_depth` in the [`metadata`](power-users#metadata) table.
 
 ## Prune Threshold and Unexpanded Papers
-Some papers are cited tens of thousands of times. Fetching every paper that cites them would swamp the graph with loosely related work. So a paper cited more times than the `prune threshold` is added to the graph, and so are the papers it cites, but the papers citing it are not fetched. The default threshold is 30,000 citations; the Inciteful website uses 10,000.
+Some papers are cited tens of thousands of times. Fetching every paper that cites them would swamp the graph with loosely related work. So a paper cited more times than the `prune threshold` is added to the graph, and so are the papers it cites, but the papers citing it are not fetched. The default threshold is 30,000 citations; the Inciteful website and the MCP server use 10,000.
 
 Two counts record how often this happened:
 
@@ -75,12 +75,20 @@ The counts are those within the graph. The seed paper itself, and papers never c
 # Fast Similarity {#fast-similarity}
 The fast similarity method returns similar papers without building a full graph or its SQL database:
 
-1. It builds a graph of depth 1: the seed paper and the papers that cite or are cited by it, or, for several seeds, `W0` and the seed papers.
-2. It keeps every citation recorded for those papers, in both directions, so the papers one step beyond them are included too. No citations are skipped for highly cited papers, whatever the prune threshold.
-3. For each paper, it calculates [Adamic/Adar](#adamic-adar) and the [Salton Index](#salton) against the seed paper (or `W0`), as described above.
+1. It builds a graph of depth 1 around the seed paper: the seed and the papers that cite or are cited by it.
+2. It keeps every citation recorded for those papers, in both directions, so the papers one step beyond them are included too. No citations are skipped for highly cited papers, whatever the prune threshold, and the 250,000-paper limit doesn't apply.
+3. For each paper, it calculates [Adamic/Adar](#adamic-adar) and the [Salton Index](#salton) against the seed paper, as described above.
 4. The `score` is the plain sum of the two, with a missing value counted as 0. Results are sorted by `score`, highest first.
 
-The two parts are on different scales and aren't weighted, so treat `score` as a ranking within one result set. In a multi-seed graph the Salton part is always 0, so `score` is the Adamic/Adar value alone.
+The two parts are on different scales and aren't weighted, so treat `score` as a ranking within one result set.
+
+## Several Seed Papers
+How several seeds are combined depends on how many there are:
+
+- **2 to 15 seeds:** each seed is ranked on its own, as above. The top 50 papers of each ranking are merged by reciprocal rank: a paper's `score` is the sum of `1 / (60 + rank)` over the rankings it appears in, so papers that rank well for several seeds come out on top.
+- **16 or more seeds:** all the seeds go in one graph of depth 1, made of `W0` and the seed papers, with every citation recorded for them. The Salton part is always 0, so `score` is the Adamic/Adar value against `W0` alone. Papers that cite many of the seeds rank highest. This is much quicker, because only the seed papers themselves are loaded.
+
+Seed papers are left out of the results.
 
 # Literature Connector {#connector}
 The Literature Connector finds paths of citations between two papers. It treats each citation as a link in either direction.
@@ -102,8 +110,8 @@ Results from Inciteful's MCP server (`https://incitefulmed.com/academic/mcp`), w
 | `server_version` | The version of the MCP server. |
 | `data_source` | Where the data comes from, such as "OpenAlex metadata (CC0) via Inciteful's citation graph". |
 | `graph_snapshot` | The version of Inciteful's paper database the graph was built from, such as `2026-10-15`. From `graph_snapshot` in the [`metadata`](power-users#metadata) table. |
-| `recent_tier` | The date up to which a nightly update has added papers newer than the snapshot. This is `null` until that nightly update is live. |
-| `coverage_note` | A sentence explaining what the graph covers, based on `graph_snapshot` and `recent_tier`. While `recent_tier` is `null`, it says that the graph is built from the snapshot, and that papers newer than the snapshot are looked up only when named explicitly, so they don't appear as neighbors. |
+| `recent_tier` | The date up to which a nightly update has added new papers on top of the snapshot, such as `2026-11-06`. `null` if the graph was built from the snapshot alone. |
+| `coverage_note` | A sentence explaining what the graph covers, based on `graph_snapshot` and `recent_tier`. The nightly update adds new papers that have a Crossref DOI. Other new papers are looked up only when named explicitly, so they don't appear as neighbors. |
 | `seeds` | Each seed as given (`input`) and the OpenAlex ID it resolved to (`openalex_id`). |
 | `graph.papers` | The number of papers in the graph with at least one citation inside it (`paper_count`). See [What Gets Analyzed](#what-gets-analyzed). |
 | `graph.citations` | The number of citations between papers in the graph (`citation_count`). |
@@ -116,7 +124,7 @@ Results from Inciteful's MCP server (`https://incitefulmed.com/academic/mcp`), w
 | `sql_executed` | The SQL exactly as it ran against the graph database. |
 | `effective_limit` | The row limit that was applied. |
 
-For [fast similarity](#fast-similarity) results, `graph.papers`, `graph.prune_threshold` and `graph.highly_cited_not_expanded` are `null`, because that method doesn't report them. For [Literature Connector](#connector) results, the provenance records the number of papers searched (`papers_searched`) and the hop counts of the paths.
+For [fast similarity](#fast-similarity) results, every `graph` field except `graph.depth` is `null`, because that method doesn't report them. For [Literature Connector](#connector) results, the provenance records the number of papers searched (`papers_searched`) and the hop counts of the paths.
 
 ## Diagnostics
 A separate `diagnostics` block flags anything that may affect the results:
@@ -133,6 +141,7 @@ Advisories are raised when:
 * the graph's depth is lower than requested;
 * `highly_cited_not_expanded` or `seeds_not_expanded` is above zero;
 * a title filter was used;
+* a SQL query's `LIMIT` was replaced by the limit applied;
 * the output was cut short.
 
 Every result also notes that retraction and preprint flags come from the `get_papers` tool.

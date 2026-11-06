@@ -139,6 +139,7 @@ One row for each fact about how the graph was built. `value` is stored as TEXT, 
 | ------------------------: | ----: |
 |               graph_depth | How many layers of citations the graph was built to. It can be lower than requested when the next layer would have been too large. |
 |            graph_snapshot | The version of Inciteful's paper database the graph was built from, such as `2026-10-15`. |
+|               recent_tier | The date up to which a nightly update has added new papers on top of `graph_snapshot`, such as `2026-11-06`. The row is missing if the graph was built from the snapshot alone. |
 |           prune_threshold | Papers cited more times than this were added to the graph, but the papers citing them were not fetched. |
 | highly_cited_not_expanded | How many papers, other than the seed papers and `W0`, were over `prune_threshold` when their layer was expanded, and so didn't have their citing papers fetched. Papers in the last layer aren't counted. |
 |        seeds_not_expanded | How many seed papers were over `prune_threshold` and so didn't have their citing papers fetched. Always `0` for a single-seed graph. |
