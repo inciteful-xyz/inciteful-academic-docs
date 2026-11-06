@@ -16,8 +16,11 @@ If you really want to get to know all the functionality of Inciteful, you've fou
     - [Database Schema](#database-schema)
       - [`papers`](#papers)
       - [`authors`](#authors)
+      - [`metadata`](#metadata)
     - [`title_search('SEARCH_TERM')`](#title_searchsearch_term)
       - [`title_terms`](#title_terms)
+      - [`all_title_terms`](#all_title_terms)
+    - [The `ror` Database](#the-ror-database)
 - [Literature Connector](#literature-connector)
   - [Context (right-click) Options](#context-right-click-options)
   - [Graph Filters](#graph-filters-1)
@@ -86,59 +89,154 @@ For a better understanding, head over to the [Paper Discovery Explained](paper-d
 ## SQL Query Panel
 
 ### Database Schema
-The following is the schema for the database which you query.  Every graph has a corresponding unique database.  
+Every graph has its own SQLite database, and the SQL Query Panel runs your query against it. The database holds the papers in the graph, their authors and some facts about how the graph was built. How the graph is built and how each score is calculated are explained on the [Methods & Provenance](methods) page.
+
+Keep these points in mind when you write a query:
+
+* **There is no table of citations.** Each paper has counts and scores, but you can't use SQL to find which papers cite which.
+* **`num_citing` and `num_cited_by` count only citations inside this graph.** They are not a paper's total citation counts.
+* **Papers with no citations inside the graph have NULL analysis columns.** `num_citing`, `num_cited_by`, `distance`, `page_rank`, `adamic_adar` and `cocite` are only filled in for papers with at least one citation to or from another paper in the graph.
+* **Graphs built from more than one seed paper include a synthetic paper, `W0`.** It is titled "Temp Paper", is dated 1900 and acts as if it cites every seed. Add `WHERE paper_id <> 'W0'` to leave it out. See [the synthetic paper](methods#the-synthetic-paper).
 
 #### `papers`
-The table containing all of the papers in the graph
+The table containing all of the papers in the graph.
 
-|    Column Name |    Type |                                                                                                                                                                                                                                       Description |
-| -------------: | ------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|       paper_id | INTEGER |                                                                                                                                                                                                                       The unique id of the paper. |
-|            doi |    TEXT |                                                                                                                                                                                                                 The doi of the paper in question. |
-|        authors |    TEXT |                                                                                                                                                                                                     A json field of all the authors on the paper. |
-|          title |    TEXT |                                                                                                                                                                                                                           The title of the paper. |
-| published_year | INTEGER |                                                                                                                                                                                                                 The year the paper was published. |
-|        journal |    TEXT |                                                                                                                                                                                                     The journal in which the paper was published. |
-|         volume |    TEXT |                                                                                                                                                                                       The volume of the journal in which the paper was published. |
-|    num_authors | INTEGER |                                                                                                                                                                                                               The number of authors on the paper. |
-|     num_citing | INTEGER |                                                                                                                                                                                                     The number of papers which this papers cites. |
-|   num_cited_by | INTEGER |                                                                                                                                                                                                       The number of papers which cite this paper. |
-|       distance | INTEGER |                                                                                                                                                                 The distance away (as an undirected graph) this paper lies from the `seed paper`. |
-|      page_rank |    REAL |                                                                                                                                                                                                                       The PageRank of this paper. |
-|    adamic_adar |    REAL | The [Adamic/Adar](https://neo4j.com/docs/graph-data-science/current/alpha-algorithms/adamic-adar/) score of the paper. Adamic/Adar is a link prediction algorithm which, when used in this context, can help to detect similarity between papers. |
-|         cocite |    REAL |                                         The co-citation score between two papers. We use the [Salton Index](https://cran.r-project.org/web/packages/linkprediction/vignettes/proxfun.html#salton-index-cosine-similarity) to calculate the score. |
+|    Column Name |    Type | Description |
+| -------------: | ------: | ----------: |
+|       paper_id |    TEXT | The OpenAlex ID of the paper, such as `W2919115771`. The synthetic paper in multi-seed graphs is `W0`. |
+|            doi |    TEXT | The DOI of the paper, without the `https://doi.org/` prefix. NULL if the paper has none. |
+|        authors |    TEXT | A JSON array of the authors on the paper. Each author has `author_id`, `name`, `sequence`, `position` (`first`, `middle` or `last`) and `institution` (`id`, `name` and `ror`). Top-level author fields with no value are left out; missing `institution` fields are `null`. |
+|    num_authors | INTEGER | The number of authors on the paper. |
+|          title |    TEXT | The title of the paper. |
+| published_year | INTEGER | The year the paper was published. |
+|        journal |    TEXT | The journal or other venue in which the paper was published. |
+|     num_citing | INTEGER | The number of papers **in this graph** which this paper cites. |
+|   num_cited_by | INTEGER | The number of papers **in this graph** which cite this paper. |
+|       distance | INTEGER | How many citations away this paper lies from the `seed paper`, ignoring the direction of each citation. In a multi-seed graph, `W0` is `0` and the seed papers are `1`. |
+|      page_rank |    REAL | The [PageRank](methods#pagerank) of this paper within this graph. |
+|    adamic_adar |    REAL | The [Adamic/Adar](methods#adamic-adar) score of this paper: how many references it shares with the `seed paper`, weighted toward references few papers cite. In a multi-seed graph it is measured against `W0`, so it reflects which seed papers a paper cites. NULL if it shares none. |
+|         cocite |    REAL | The co-citation score of this paper with the `seed paper`, using the [Salton Index](methods#salton). NULL if no paper cites both. Always NULL in multi-seed graphs, because nothing cites `W0`. |
 
 #### `authors`
-A denormalized table containing the metadata about each author for each paper.
+A denormalized table with one row for each author of each paper.
 
-| Column Name |    Type |                                                     Description |
-| ----------: | ------: | --------------------------------------------------------------: |
-|   author_id | INTEGER |                                    The unique id of the author. |
-|    paper_id | INTEGER |                                     The unique id of the paper. |
-|        name |    TEXT |                                         The name of the author. |
-|    sequence | INTEGER |                        The sequence of the author in the paper. |
-| affiliation |    TEXT | The affiliation of the author at the time the paper was written |
+|       Column Name |    Type | Description |
+| ----------------: | ------: | ----------: |
+|         author_id |    TEXT | The OpenAlex author ID, without its `A` prefix. `0` for an author with no OpenAlex ID. Only the first such author on each paper is kept. |
+|          paper_id |    TEXT | The ID of the paper, matching `papers.paper_id`. |
+|              name |    TEXT | The name of the author. |
+|          sequence | INTEGER | The position of the author in the paper's author list, starting at `0`. |
+|       affiliation |    TEXT | The name of the author's first listed institution on this paper. |
+|    affiliation_id |    TEXT | The OpenAlex ID of that institution, without its `I` prefix. |
+|               ror |    TEXT | The [ROR](https://ror.org) URL of that institution, such as `https://ror.org/03vek6s52`. It matches `ror.organizations.ror_url` in the [`ror` database](#the-ror-database). |
+|    published_year | INTEGER | The year the paper was published, copied from `papers` so author queries don't need a join. |
+| partial_page_rank |    REAL | The author's share of the paper's `page_rank` (0 if the paper has none). Papers with 1 to 3 authors split it evenly. On papers with 4 or more authors, the first and last authors each get a third, and every other author gets a third divided by the number of authors. |
+
+#### `metadata`
+One row for each fact about how the graph was built. `value` is stored as TEXT, so use `CAST(value AS INTEGER)` to compare numbers. The [Methods & Provenance](methods#graph-construction) page explains each one.
+
+|                      name | Meaning |
+| ------------------------: | ----: |
+|               graph_depth | How many layers of citations the graph was built to. It can be lower than requested when the next layer would have been too large. |
+|            graph_snapshot | The version of Inciteful's paper database the graph was built from, such as `2026-10-15`. |
+|               recent_tier | The date up to which a nightly update has added new papers on top of `graph_snapshot`, such as `2026-11-06`. The row is missing if the graph was built from the snapshot alone. |
+|           prune_threshold | Papers cited more times than this were added to the graph, but the papers citing them were not fetched. |
+| highly_cited_not_expanded | How many papers, other than the seed papers and `W0`, were over `prune_threshold` when their layer was expanded, and so didn't have their citing papers fetched. Papers in the last layer aren't counted. |
+|        seeds_not_expanded | How many seed papers were over `prune_threshold` and so didn't have their citing papers fetched. Always `0` for a single-seed graph. |
+|               paper_count | The number of papers with at least one citation inside the graph, including `W0` in a multi-seed graph. This can be lower than `SELECT COUNT(*) FROM papers`. |
+|            citation_count | The number of citations between papers in the graph. |
+
+For example:
+
+```
+SELECT name, value FROM metadata
+```
 
 ### `title_search('SEARCH_TERM')`
-A table containing a full text index of the paper titles that can be searched by replacing {SEARCH_TERM} with the query of your choice. You can use Boolean operators like AND, OR, and NOT in addition to parenthesis to create matching logic. An example finding the best match:
+A full text index (SQLite FTS5) of the paper titles that can be searched by replacing `SEARCH_TERM` with the query of your choice. Words are [Porter stemmed](#porter-stemming), and you can use Boolean operators like `AND`, `OR`, and `NOT` in addition to parentheses to create matching logic.
+
+The paper IDs are indexed too, so start your query with `search_text:` to match titles only. An example finding the best match:
 
 ```
-SELECT * FROM title_search('refugee') ORDER BY bm25(title_search)
+SELECT * FROM title_search('search_text: refugee') ORDER BY bm25(title_search)
 ```
 
-|        Column Name |    Type |                                                                                                                                             Description |
-| -----------------: | ------: | ------------------------------------------------------------------------------------------------------------------------------------------------------: |
-|           paper_id | INTEGER |                                                                                                                             The unique id of the paper. |
-|              title |    TEXT |                                                                                                                            The text which was searched. |
+|        Column Name |    Type | Description |
+| -----------------: | ------: | ----------: |
+|           paper_id |    TEXT | The ID of the paper, matching `papers.paper_id`. |
+|        search_text |    TEXT | The title of the paper. |
 | bm25(title_search) |    REAL | Returns a real value indicating how well the current row matches the full-text query. The better the match, the numerically smaller the value returned. |
 
 #### `title_terms`
-A table a list of all of the stemmed title terms present in the full text index and their counts.
+A view listing the stemmed terms in the full text index and how many papers each appears in. It leaves out a few very common words (`and`, `of`, `the`, `in`, `a`, `on`, `to`, `for`, `an`, `from`, `s`, `with` and `among`). Because the paper IDs are indexed too, each ID also appears as a term (for example `w2919115771`), and in a multi-seed graph so do `temp` and `paper` from the synthetic paper's title.
 
-| Column Name | Type |                                          Description |
-| ----------: | ---: | ---------------------------------------------------: |
-|        term | TEXT | The porter-stemmed terms which appear in the titles. |
-|   doc_count |  INT |    The number of papers in which these terms appear. |
+| Column Name | Type | Description |
+| ----------: | ---: | ----------: |
+|        term | TEXT | The Porter-stemmed term. |
+|   doc_count |  INT | The number of papers in which the term appears. |
+
+#### `all_title_terms`
+The unfiltered vocabulary that `title_terms` is built on (an FTS5 `fts5vocab` table), including the common words.
+
+| Column Name | Type | Description |
+| ----------: | ---: | ----------: |
+|        term | TEXT | The Porter-stemmed term. |
+|         doc |  INT | The number of papers in which the term appears. |
+|         cnt |  INT | The total number of times the term appears. |
+
+### The `ror` Database
+Data from the [Research Organization Registry](https://ror.org) (ROR) is attached to every graph database as `ror` (when the server has the ROR file, as it does in production), so prefix its tables with `ror.`. It holds active organizations only. Join it to authors on `authors.ror = ror.organizations.ror_url`:
+
+```
+SELECT r.display_name, r.country_name, COUNT(DISTINCT a.paper_id) AS papers
+FROM authors a
+JOIN ror.organizations r ON a.ror = r.ror_url
+GROUP BY r.ror_id, r.display_name, r.country_name
+ORDER BY papers DESC
+```
+
+#### `ror.organizations`
+
+|  Column Name | Description |
+| -----------: | ----------: |
+|       ror_id | The ROR ID, without the URL prefix, such as `03vek6s52`. |
+|      ror_url | The full ROR URL, such as `https://ror.org/03vek6s52`. |
+| display_name | The organization's name. |
+|       status | The organization's ROR status. Always `active` here. |
+|  established | The year the organization was established. |
+|        types | The organization's ROR types, such as `education` or `company`. |
+| country_code | The two-letter country code of the organization's main location. |
+| country_name | The country name of the organization's main location. |
+|         city | The city of the organization's main location. |
+|     latitude | The latitude of the organization's main location. |
+|    longitude | The longitude of the organization's main location. |
+
+#### `ror.names`
+
+| Column Name | Description |
+| ----------: | ----------: |
+|      ror_id | The ROR ID of the organization. |
+|        name | One of the organization's names. |
+|  name_types | The kinds of name this is, separated by vertical bars, such as `ror_display`, `label`, `alias` or `acronym`. |
+|    language | The language of the name, when ROR records one. |
+
+#### `ror.external_ids`
+
+| Column Name | Description |
+| ----------: | ----------: |
+|      ror_id | The ROR ID of the organization. |
+|     id_type | The kind of identifier, such as `grid`, `isni`, `fundref` or `wikidata`. |
+| preferred_id | The identifier ROR lists as preferred for this kind, if any. |
+|  external_id | The identifier. |
+
+#### `ror.relationships`
+
+|       Column Name | Description |
+| ----------------: | ----------: |
+|            ror_id | The ROR ID of the organization. |
+|    related_ror_id | The ROR ID of the related organization. |
+|      related_name | The name of the related organization. |
+| relationship_type | How they are related, such as `parent`, `child` or `related`. |
 
 # Literature Connector
 
